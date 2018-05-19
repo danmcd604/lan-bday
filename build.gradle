@@ -15,6 +15,12 @@ buildscript {
     }
 }
 
+ext {
+    supportVersion = "24.1.0"
+    runnerVersion = "1.0.1"
+    espressoVersion = "3.0.1"
+}
+
 allprojects {
     repositories {
         google()

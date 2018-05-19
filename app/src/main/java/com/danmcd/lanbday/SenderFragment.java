@@ -3,10 +3,14 @@ package com.danmcd.lanbday;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.EditText;
+
+import java.util.Date;
 
 
 /**
@@ -15,13 +19,17 @@ import android.view.ViewGroup;
 public class SenderFragment extends BaseFragment implements View.OnClickListener {
 
     // General //
-    private static final String TAG = SenderFragment.class.getName();
+    public static final String TAG = "SenderFragment";
 
     // Interactions //
     public interface SenderInteractions {
-        void onFragmentInteraction(Uri uri);
+        void sendBirthday(String name, Date birthDay);
     }
     private SenderInteractions mListener;
+
+    // Views //
+    private Button mSendButton;
+    private EditText mNameTextInput;
 
     public SenderFragment() {
         // Empty constructor, could be utilized later
@@ -47,6 +55,8 @@ public class SenderFragment extends BaseFragment implements View.OnClickListener
         //TODO: setup input buttons
 
         // Setup 'send' button:
+        mSendButton = (Button) root.findViewById(R.id.btn_send);
+        mSendButton.setOnClickListener(this);
 
 
         return root;
@@ -76,6 +86,7 @@ public class SenderFragment extends BaseFragment implements View.OnClickListener
         switch (view.getId()) {
             case R.id.btn_send:
                 //TODO: handle send
+                Log.i(TAG, "Clicked send button");
                 break;
         }
     }

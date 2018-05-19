@@ -6,7 +6,14 @@
 
 
     <!--Add Edit Text for inputs-->
-    <TextView
+    <LinearLayout
+        android:id="@+id/form_birthday"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+
+    </LinearLayout>
+    <Button
         android:id="@+id/btn_send"
         android:layout_width="100dp"
         android:layout_height="50dp"
