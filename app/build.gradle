@@ -4,7 +4,7 @@ android {
     compileSdkVersion 24
     defaultConfig {
         applicationId "com.danmcd.lanbday"
-        minSdkVersion 15
+        minSdkVersion 16
         targetSdkVersion 24
         versionCode 1
         versionName "1.0"
@@ -24,6 +24,7 @@ dependencies {
     compile 'com.android.support.constraint:constraint-layout:1.1.0'
     compile 'com.android.support:design:' + rootProject.supportVersion
     compile 'com.android.support:support-v4:' + rootProject.supportVersion
+    compile 'org.apache.commons:commons-lang3:3.5'
     testCompile 'junit:junit:4.12'
     androidTestCompile 'com.android.support.test:runner:' + rootProject.runnerVersion
     androidTestCompile 'com.android.support.test.espresso:espresso-core:' + rootProject.espressoVersion
