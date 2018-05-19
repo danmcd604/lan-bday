@@ -1,24 +1,47 @@
-<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
+    android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:gravity="center"
     tools:context="com.danmcd.lanbday.SenderFragment">
-
 
     <!--Add Edit Text for inputs-->
     <LinearLayout
         android:id="@+id/form_birthday"
         android:orientation="vertical"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content">
+        android:layout_height="wrap_content"
+        android:paddingLeft="100dp"
+        android:paddingRight="100dp"
+        android:layout_marginBottom="100dp">
+        <EditText
+            android:id="@+id/input_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="5dip"
+            android:padding="5dip"
+            android:hint="Enter your Name"
+            android:textColor="@color/colorPrimaryText"
+            android:maxLines="1"
+            />
 
+        <EditText
+            android:id="@+id/input_date"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="5dip"
+            android:padding="5dip"
+            android:hint="mm/dd/yyyy"
+            android:textColor="@color/colorPrimaryText"
+            android:maxLines="1"
+            />
     </LinearLayout>
     <Button
         android:id="@+id/btn_send"
         android:layout_width="100dp"
         android:layout_height="50dp"
-        android:layout_centerInParent="true"
-        android:gravity="center"
+        android:layout_gravity="center"
         android:background="@color/colorPrimary"
         android:text="send"
         android:textColor="@color/colorWhite"
@@ -26,4 +49,4 @@
         android:textSize="16sp"
         android:textAllCaps="true"/>
 
-</RelativeLayout>
+</LinearLayout>

@@ -67,6 +67,18 @@ public class MainActivity extends AppCompatActivity
     ////////////////// NAVIGATION ///////////////////
     /////////////////////////////////////////////////
 
+    @Override
+    public void onBackPressed() {
+        if(getFragmentManager().getBackStackEntryCount() > 0) {
+            // Pop fragment stack:
+            getFragmentManager().popBackStack();
+            // Show 'chooser' content:
+            showContentChooserArea(true);
+        } else {
+            super.onBackPressed();
+        }
+    }
+
     private void launchSenderFragment() {
         // Launch sender fragment:
         launchFragment(SenderFragment.newInstance(), SenderFragment.TAG);
@@ -107,5 +119,7 @@ public class MainActivity extends AppCompatActivity
     @Override
     public void sendBirthday(String name, Date birthDay) {
         //TODO: implement sending birthday
+        Log.d(TAG, "Name: "+name);
+        Log.d(TAG, "Birth Day: "+SenderFragment.BIRTHDAY_FORMAT.format(birthDay));
     }
 }
