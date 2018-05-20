@@ -3,6 +3,7 @@ package com.danmcd.lanbday;
 import android.os.Handler;
 import android.util.Log;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -13,7 +14,7 @@ import java.util.concurrent.TimeUnit;
  * Created by dan on 5/19/18.
  */
 
-public class OwnerSocketHandler extends Thread {
+public class OwnerSocketHandler extends Thread implements Closeable {
 
     private static final String TAG = "OwnerSocketHandler";
 
@@ -67,5 +68,11 @@ public class OwnerSocketHandler extends Thread {
 
     public CommunicationManager getManager() {
         return manager;
+    }
+
+    @Override
+    public void close() throws IOException {
+        socket.close();
+        socket = null;
     }
 }

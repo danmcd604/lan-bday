@@ -4,6 +4,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.util.Log;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -14,7 +15,7 @@ import java.net.ConnectException;
  * Created by dan on 5/19/18.
  */
 
-public class MemberSocketHandler extends Thread {
+public class MemberSocketHandler extends Thread implements Closeable {
 
 
     private static final String TAG = "MemberSocketHandler";
@@ -23,6 +24,7 @@ public class MemberSocketHandler extends Thread {
     private Handler handler;
     private CommunicationManager manager;
     private InetAddress address;
+    private Socket socket;
 
     public MemberSocketHandler(Handler handler, InetAddress groupAddress) {
         this.handler = handler;
@@ -33,7 +35,7 @@ public class MemberSocketHandler extends Thread {
     @Override
     public void run() {
         // Initialize socket:
-        Socket socket = new Socket();
+        socket = new Socket();
         try {
             socket.bind(null);
             socket.connect(new InetSocketAddress(address.getHostAddress(),
@@ -60,4 +62,9 @@ public class MemberSocketHandler extends Thread {
         return manager;
     }
 
+    @Override
+    public void close() throws IOException {
+        socket.close();
+        socket = null;
+    }
 }

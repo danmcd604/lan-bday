@@ -22,10 +22,12 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import org.apache.commons.lang3.StringUtils;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.text.ParseException;
@@ -76,8 +78,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private int mCurrentState = UNDETERMINED; // Current config state of the app
 
     // Views //
-    private LinearLayout mStatusContent;
+    private RelativeLayout mStatusContent;
     private TextView mStatusTextView;
+    private Button mStopButton;
 
     private Button mSenderButton;
     private Button mReceiverButton;
@@ -112,8 +115,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mReceiverButton.setOnClickListener(this);
 
         // Setup status content:
-        mStatusContent = (LinearLayout) findViewById(R.id.content_progress);
+        mStatusContent = (RelativeLayout) findViewById(R.id.content_progress);
         mStatusTextView = (TextView) findViewById(R.id.tv_status);
+        mStopButton = (Button) findViewById(R.id.btn_stop_progress);
+        mStopButton.setOnClickListener(this);
 
         mServiceHandler = new Handler(getMainLooper());
 
@@ -168,6 +173,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         removeService();
         // Clear local services:
         clearLocalServices();
+        // Stop handlers:
+        if(mCommunicationThread instanceof Closeable) {
+            try {
+                ((Closeable) mCommunicationThread).close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
         // Clear response listeners:
         mWifiManager.setDnsSdResponseListeners(mChannel, null, null);
     }
@@ -187,10 +200,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             case R.id.btn_receiver:
                 // Set state to 'receiver':
                 setState(RECEIVER);
+                // Update status:
+                updateStatus("Searching for services...");
                 // Show status content:
                 showStatusContent(true);
                 // Discover services:
                 discoverServices();
+                break;
+            case R.id.btn_stop_progress:
+                // Stop action currently associated w/ state:
+                stopProcessingState(mCurrentState);
+                // Set state to 'undetermined':
+                setState(UNDETERMINED);
+                // Show chooser content:
+                showContentChooserArea(true);
                 break;
         }
     }
@@ -204,8 +227,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private void showContentChooserArea(boolean show) {
         // Transition to appropriate content:
         findViewById(R.id.content_chooser).setVisibility(show ? View.VISIBLE : View.GONE);
-        findViewById(R.id.content_progress).setVisibility(show ? View.VISIBLE : View.GONE);
+        findViewById(R.id.content_progress).setVisibility(show ? View.GONE : View.VISIBLE);
         findViewById(R.id.content_frame).setVisibility(show ? View.GONE : View.VISIBLE);
+    }
+
+    private void showFragentContentArea(boolean show) {
+        findViewById(R.id.content_frame).setVisibility(show ? View.VISIBLE : View.GONE);
+        findViewById(R.id.content_progress).setVisibility(show ? View.GONE : View.VISIBLE);
+        findViewById(R.id.content_chooser).setVisibility(show ? View.GONE : View.VISIBLE);
     }
 
     private void setState(int state) {
@@ -255,14 +284,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // Launch sender fragment:
         launchFragment(SenderFragment.newInstance(), SenderFragment.TAG);
         // Transition to fragment content:
-        showContentChooserArea(false);
+        showFragentContentArea(true);
     }
 
     private void launchReceiverFragment() {
         // Launch receiver fragment:
         launchFragment(ReceiverFragment.newInstance(), ReceiverFragment.TAG);
         // Transition to fragment content:
-        showContentChooserArea(false);
+        showFragentContentArea(true);
     }
 
     /**
@@ -330,7 +359,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     @Override
     public void onConnectionStateChanged(boolean connected) {
+        Log.i(TAG, "Connected to Service: "+isConnectedToService());
         Log.i(TAG, "Connected: "+connected);
+
+        // Handle connected to service/not connected to peer:
+        if(!connected && isConnectedToService()) {
+            // Disconnect from serviceL
+            disconnectFromService();
+            // Set state:
+            setState(UNDETERMINED);
+            // Show chooser content:
+            showContentChooserArea(true);
+            // Notify user disconnected:
+            Utils.showToast(this, "Disconnected from service");
+        }
     }
 
     @Override
@@ -343,6 +385,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
          */
         if(mCommunicationThread != null) {
             Log.i(TAG, "Communication thread has already been set up");
+            return;
+        }
+
+        // Handle state undetermined:
+        if(mCurrentState == UNDETERMINED) {
+            // Disconnect from peer:
+            disconnectFromDevice();
+            // Remove group:
+            removeGroupFromChannel();
+            // Remove persistent groups:
+            removePersistentGroups();
+            // Reset connection state:
+            resetConnectionState();
             return;
         }
 
@@ -462,6 +517,24 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 break;
         }
         return false;
+    }
+
+    /**
+     * Stops any ongoing processes for the given state. For instance stopping the 'sender'
+     * state will remove the local service.
+     *
+     * Assumptions:
+     *      1) Client is not connected to a peer
+     * @param state
+     */
+    private void stopProcessingState(int state) {
+        switch (state) {
+            case SENDER:
+                removeService();
+                break;
+            case RECEIVER:
+                break;
+        }
     }
 
 
@@ -642,22 +715,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // Connect to service:
         updateStatus("Connecting to service...");
         connectToDevice(config);
-        if(mServiceRequest != null) {
 
+    }
 
-//            mWifiManager.removeServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
-//                @Override
-//                public void onSuccess() {
-//                    Log.i(TAG, "Removed service request after connecting");
-//
-//                }
-//
-//                @Override
-//                public void onFailure(int i) {
-//                    Log.i(TAG, "Unable to remove request: "+i);
-//                }
-//            });
-        }
+    private void disconnectFromService() {
+        // Remove group:
+        removeGroupFromChannel();
+        removePersistentGroups();
+        // Clear local services:
+        clearLocalServices();
+        // Disconnect from device:
+        disconnectFromDevice();
+        // Reset connection state:
+        resetConnectionState();
     }
 
     private void connectToDevice(WifiP2pConfig config) {
