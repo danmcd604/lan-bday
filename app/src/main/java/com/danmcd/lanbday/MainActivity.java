@@ -271,6 +271,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onBackPressed() {
         if(getFragmentManager().getBackStackEntryCount() > 0) {
+            Log.i(TAG, "Back Pressed");
+            // Disconnect from service:
+            disconnectFromService();
             // Pop fragment stack:
             getFragmentManager().popBackStack();
             // Show 'chooser' content:
