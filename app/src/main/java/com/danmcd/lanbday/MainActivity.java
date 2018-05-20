@@ -3,7 +3,6 @@ package com.danmcd.lanbday;
 import android.app.Fragment;
 import android.content.Context;
 import android.content.IntentFilter;
-import android.net.Uri;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
@@ -21,7 +20,6 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -62,11 +60,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private CommunicationManager manager;
 
     // General //
-    private static final int NOT_CONNECTED = 0; // Undetermined state (neither sender nor receiver)
+    private static final int UNDETERMINED = 0; // Undetermined state (neither sender nor receiver)
     private static final int SENDER = 1; // Configured for sending data.
     private static final int RECEIVER = 2; // Configured for receiving data
 
-    private int mCurrentState = NOT_CONNECTED; // Current config state of the app
+    private int mCurrentState = UNDETERMINED; // Current config state of the app
 
     // Views //
     private LinearLayout mStatusContent;
@@ -139,68 +137,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onStop();
         // Unregister wifi receiver:
         unregisterReceiver(mWifiReceiver);
-
-        // Cancel current connections:
-//        mWifiManager.cancelConnect(mChannel, new WifiP2pManager.ActionListener() {
-//            @Override
-//            public void onSuccess() {
-//                Log.i(TAG, "Cancelled connections");
-//            }
-//
-//            @Override
-//            public void onFailure(int i) {
-//                Log.i(TAG, "Unable to cancel connections");
-//            }
-//        });
-//        mWifiManager.clearLocalServices(mChannel, new WifiP2pManager.ActionListener() {
-//            @Override
-//            public void onSuccess() {
-//                Log.i(TAG, "Clear local services onStop");
-//            }
-//
-//            @Override
-//            public void onFailure(int i) {
-//                Log.i(TAG, "Failed to clear local services onStop");
-//            }
-//        });
-//        mWifiManager.stopPeerDiscovery(mChannel, new WifiP2pManager.ActionListener() {
-//            @Override
-//            public void onSuccess() {
-//                Log.i(TAG, "Stopped peer discovery");
-//            }
-//
-//            @Override
-//            public void onFailure(int i) {
-//                Log.i(TAG, "Failed to stop peer discovery");
-//            }
-//        });
-        // Remove local service:
-        if(mServiceInfo != null) {
-            mWifiManager.removeLocalService(mChannel, mServiceInfo, new WifiP2pManager.ActionListener() {
-                @Override
-                public void onSuccess() {
-                    Log.i(TAG, "Removed service...");
-                }
-
-                @Override
-                public void onFailure(int i) {
-                    Log.i(TAG, "Unable to remove service");
-                }
-            });
-        }
-        // Remove group in channel:
-        mWifiManager.removeGroup(mChannel, new WifiP2pManager.ActionListener() {
-            @Override
-            public void onSuccess() {
-                Log.i(TAG, "Removed group!");
-            }
-
-            @Override
-            public void onFailure(int i) {
-                Log.d(TAG, "Failed to remove group: "+i);
-            }
-        });
-//        mWifiManager.
+        removeGroupFromChannel();
     }
 
     @Override
@@ -216,21 +153,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // Handle view clicks:
         switch (view.getId()) {
             case R.id.btn_sender:
-                Log.i(TAG, "Clicked sender button");
                 // Set state to 'sender':
                 setState(SENDER);
                 // Show status content:
                 showStatusContent(true);
-//                // Launch sender fragment:
-//                launchSenderFragment();
                 // Register service for discovery:
                 registerDnsService();
-                //TODO: initiate communication
                 break;
             case R.id.btn_receiver:
                 // Set state to 'receiver':
                 setState(RECEIVER);
-                //TODO: launch ReceiverFragment
+                // Show status content:
+                showStatusContent(true);
                 // Discover services:
                 discoverServices();
                 break;
@@ -246,7 +180,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private void showContentChooserArea(boolean show) {
         // Transition to appropriate content:
         findViewById(R.id.content_chooser).setVisibility(show ? View.VISIBLE : View.GONE);
-        findViewById(R.id.content_progress).setVisibility(show ? View.GONE : View.VISIBLE);
+        findViewById(R.id.content_progress).setVisibility(show ? View.VISIBLE : View.GONE);
         findViewById(R.id.content_frame).setVisibility(show ? View.GONE : View.VISIBLE);
     }
 
@@ -329,19 +263,29 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onConnectionStateChanged(boolean connected) {
         Log.i(TAG, "Connected: "+connected);
+        if(connected && mCurrentState == UNDETERMINED) {
+            /*
+                User is connected to a peer but has not yet
+                determined their state. We don't want this to
+                occur. So here we'll disconnect from that peer.
+             */
+            removeGroupFromChannel();
+        }
     }
 
     @Override
     public void onConnectionInfoAvailable(WifiP2pInfo wifiP2pInfo) {
         Log.i(TAG, "Received connection info...");
-        if(mCurrentState == NOT_CONNECTED) {
+        if(mCurrentState == UNDETERMINED) {
             Log.i(TAG, "Received connection info in undetermined state!");
             //TODO: handle this case, probably improperly stopped app
             return;
         }
 
-        // Initialize handler:
-        mCommunicationThread = null;
+        if(mCommunicationThread != null) {
+            Log.i(TAG, "Communication thread has already been set up");
+            return;
+        }
 
         // Determine handler type:
         if(wifiP2pInfo.isGroupOwner) {
@@ -355,15 +299,23 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         "Failed to create a server thread - " + e.getMessage());
                 return;
             }
+            //TODO: will eventually need to launch receiver fragment
 
         } else {
             Log.i(TAG, "Phone is not owner of group");
             Log.d(TAG, "Connected as peer");
-            Log.d(TAG, "Handler: "+this.handler);
+            /*
+                Communication w/ a peer has been established. At this
+                point status content should be hidden and we should
+                transition to the SenderFragment.
+             */
+            // Define communication thread:
             mCommunicationThread = new SenderSocketHandler(
                     this.handler,
                     wifiP2pInfo.groupOwnerAddress);
             mCommunicationThread.start();
+            // Launch sender fragment:
+            launchSenderFragment();
         }
     }
 
@@ -470,12 +422,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mWifiManager.discoverPeers(mChannel, new WifiP2pManager.ActionListener() {
             @Override
             public void onSuccess() {
-
+                Log.i(TAG, "Able to start discovering peers");
             }
 
             @Override
             public void onFailure(int i) {
-
+                Log.i(TAG, "Unable to start discovering peers");
             }
         });
 //        mServiceHandler.postDelayed(new Runnable() {
@@ -489,6 +441,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private void discoverServices() {
         // Define service request:
         if(mServiceRequest != null) {
+            // Remove current service request:
+            updateStatus("Removing leftover requests...");
             mWifiManager.removeServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
                 @Override
                 public void onSuccess() {
@@ -499,6 +453,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         @Override
                         public void onSuccess() {
                             Log.i(TAG, "Successfully added service request");
+                            updateStatus("Discovering services...");
                             mWifiManager.discoverServices(mChannel, new WifiP2pManager.ActionListener() {
                                 @Override
                                 public void onSuccess() {
@@ -528,10 +483,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
 
             // Add request:
+            updateStatus("Adding service request...");
             mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
                 @Override
                 public void onSuccess() {
                     Log.i(TAG, "Successfully added service request");
+                    updateStatus("Discovering services...");
                     mWifiManager.discoverServices(mChannel, new WifiP2pManager.ActionListener() {
                         @Override
                         public void onSuccess() {
@@ -560,7 +517,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         Log.d(TAG, "Service Type: "+type);
         Log.d(TAG, "Device Name: "+device.deviceName);
         // Define wifi configuration:
-        WifiP2pConfig config = new WifiP2pConfig();
+        final WifiP2pConfig config = new WifiP2pConfig();
         config.deviceAddress = device.deviceAddress;
         config.wps.setup = WpsInfo.PBC;
 
@@ -569,6 +526,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 @Override
                 public void onSuccess() {
                     Log.i(TAG, "Removed service request after connecting");
+                    updateStatus("Connecting to service...");
+                    connectToDevice(config);
                 }
 
                 @Override
@@ -576,21 +535,53 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     Log.i(TAG, "Unable to remove request: "+i);
                 }
             });
-
-
-            // Connect to device:
-            mWifiManager.connect(mChannel, config, new WifiP2pManager.ActionListener() {
-                @Override
-                public void onSuccess() {
-                    Log.i(TAG, "Connected to device!");
-                }
-
-                @Override
-                public void onFailure(int i) {
-                    Log.i(TAG, "Unable to connect to device: "+i);
-                }
-            });
         }
+    }
+
+    private void connectToDevice(WifiP2pConfig config) {
+        // Connect to device:
+        mWifiManager.connect(mChannel, config, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "Connected to device!");
+            }
+
+            @Override
+            public void onFailure(int i) {
+                Log.i(TAG, "Unable to connect to device: "+i);
+                // Notify user unable to connect to service:
+                Utils.showToast(MainActivity.this, "Unable to connect to service");
+            }
+        });
+    }
+
+    private void removeGroupFromChannel() {
+        // Remove group in channel:
+        mWifiManager.removeGroup(mChannel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "Removed group!");
+            }
+
+            @Override
+            public void onFailure(int i) {
+                Log.d(TAG, "Failed to remove group: "+i);
+            }
+        });
+    }
+
+    private void disconnectFromDevice() {
+        mWifiManager.cancelConnect(mChannel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "Cancelled connections");
+            }
+
+            @Override
+            public void onFailure(int i) {
+                Log.i(TAG, "Unable to cancel connections");
+            }
+        });
     }
 
     ///////////////////////////////////////////////////
@@ -606,5 +597,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         String message = TextUtils.join("|", new String[] {name, SenderFragment.BIRTHDAY_FORMAT.format(birthDay)});
         new WriteTask(manager, message).execute(null, null);
+
+        // Notify birthday was sent:
+        Utils.showToast(this, "Sent Birthday");
     }
 }

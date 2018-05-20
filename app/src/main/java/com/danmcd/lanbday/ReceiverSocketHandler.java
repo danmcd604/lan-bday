@@ -23,7 +23,6 @@ public class ReceiverSocketHandler extends Thread {
     public ReceiverSocketHandler(Handler handler) throws IOException {
         try {
             socket = new ServerSocket(MainActivity.SERVER_PORT);
-            socket.setReceiveBufferSize(4);
             this.handler = handler;
             Log.d(TAG, "Socket Started");
         } catch (IOException e) {
