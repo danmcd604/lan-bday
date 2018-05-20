@@ -1,12 +1,14 @@
 package com.danmcd.lanbday;
 
 import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.ConnectException;
 
 /**
  * Created by dan on 5/19/18.
@@ -42,13 +44,15 @@ public class MemberSocketHandler extends Thread {
             new Thread(manager).start();
         } catch (IOException e) {
             e.printStackTrace();
-            handler.obtainMessage(CommunicationManager.CONNECTION_REFUSED);
+            Log.w(TAG, "Connection was refused!");
+            Message message = new Message();
+            message.what = CommunicationManager.CONNECTION_REFUSED;
+            handler.dispatchMessage(message);
             try {
                 socket.close();
             } catch (IOException e1) {
                 e1.printStackTrace();
             }
-            return;
         }
     }
 

@@ -59,10 +59,8 @@ public class WifiBroadcastReceiver extends BroadcastReceiver {
 
             }
             notifyConnected(networkInfo.isConnected());
-            //TODO: handle connection changed action
         } else if(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION.equals(action)) {
             Log.i(TAG, "Received Device Changed Action");
-            //TODO: handle device change action
         } else if(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION.equals(action)) {
             // Determine if Wifi P2P mode is enabled or not, alert
             // the Activity.
