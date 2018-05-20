@@ -27,9 +27,13 @@ import android.widget.TextView;
 import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener,
         SenderFragment.SenderInteractions, ConnectionListener,
@@ -39,6 +43,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private static final String TAG = "MainActivity";
 
     // Service //
+    private static final int SERVICE_DISCOVERY_TIMEOUT = 120000; // Every 2 minutes
     private static final String SERVICE_INSTANCE = "_landbay";
     private static final String SERVICE_TYPE = "_presence._tcp";
 
@@ -46,6 +51,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private WifiP2pDnsSdServiceRequest mServiceRequest;
     private WifiP2pServiceInfo mServiceInfo;
+    private final ArrayList<ServiceDiscoveryTask> mServiceDiscoveryTasks = new ArrayList<>();
+    private boolean mIsDiscoveringServices = false;
 
     // Communication //
     private IntentFilter mIntentFilter = new IntentFilter();
@@ -109,23 +116,26 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mStatusTextView = (TextView) findViewById(R.id.tv_status);
 
         mServiceHandler = new Handler(getMainLooper());
+
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        // Start discovering peers:
-        discoverPeers();
+        Log.i(TAG, "On Start");
         // Register wifi receiver:
         registerReceiver(mWifiReceiver, mIntentFilter);
+        // Begin to continuously discover services:
+        startDiscoverServices();
 
     }
+
+
 
     @Override
     protected void onPause() {
@@ -137,15 +147,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         super.onStop();
         // Unregister wifi receiver:
         unregisterReceiver(mWifiReceiver);
-        removeGroupFromChannel();
+        // Stop discovering services:
+        stopDiscoveringServices();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        Log.i(TAG, "onDestroy");
-
-
+        // Remove group:
+        removeGroupFromChannel();
+        // Remove persistent groups:
+        removePersistentGroups();
+        // Remove local service:
+        removeService();
     }
 
     @Override
@@ -263,30 +277,29 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onConnectionStateChanged(boolean connected) {
         Log.i(TAG, "Connected: "+connected);
-        if(connected && mCurrentState == UNDETERMINED) {
-            /*
-                User is connected to a peer but has not yet
-                determined their state. We don't want this to
-                occur. So here we'll disconnect from that peer.
-             */
-            removeGroupFromChannel();
-        }
+//        if(connected && mCurrentState == UNDETERMINED) {
+//            /*
+//                User is connected to a peer but has not yet
+//                determined their state. We don't want this to
+//                occur. So here we'll disconnect from that peer.
+//             */
+//            removeGroupFromChannel();
+//        }
     }
 
     @Override
     public void onConnectionInfoAvailable(WifiP2pInfo wifiP2pInfo) {
         Log.i(TAG, "Received connection info...");
-        if(mCurrentState == UNDETERMINED) {
-            Log.i(TAG, "Received connection info in undetermined state!");
-            //TODO: handle this case, probably improperly stopped app
-            return;
-        }
+//        if(mCurrentState == UNDETERMINED) {
+//            Log.i(TAG, "Received connection info in undetermined state!");
+//            //TODO: handle this case, probably improperly stopped app
+//            return;
+//        }
 
         if(mCommunicationThread != null) {
             Log.i(TAG, "Communication thread has already been set up");
             return;
         }
-
         // Determine handler type:
         if(wifiP2pInfo.isGroupOwner) {
             Log.i(TAG, "Phone is owner of group!");
@@ -304,6 +317,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } else {
             Log.i(TAG, "Phone is not owner of group");
             Log.d(TAG, "Connected as peer");
+            Log.d(TAG, "Group owner address: "+wifiP2pInfo.groupOwnerAddress);
             /*
                 Communication w/ a peer has been established. At this
                 point status content should be hidden and we should
@@ -313,6 +327,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             mCommunicationThread = new SenderSocketHandler(
                     this.handler,
                     wifiP2pInfo.groupOwnerAddress);
+
             mCommunicationThread.start();
             // Launch sender fragment:
             launchSenderFragment();
@@ -325,6 +340,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if(StringUtils.equals(instanceName, SERVICE_INSTANCE)) {
             Log.i(TAG, "Service discovered was our service!!!");
             Log.i(TAG, "Device Name: "+device.deviceName);
+            Log.i(TAG, ""+device.isGroupOwner());
             // Connect to service:
             connectToService(instanceName, type, device);
         }
@@ -332,7 +348,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     @Override
     public void onDnsSdTxtRecordAvailable(String s, Map<String, String> map, WifiP2pDevice wifiP2pDevice) {
-        Log.i(TAG , "Got HEre");
     }
 
     @Override
@@ -438,77 +453,194 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 //        }, 10000);
     }
 
+    private void startDiscoverServices() {
+        Log.i(TAG, "Starting service discovery...");
+        if (mIsDiscoveringServices){
+            Log.w(TAG, "Services are still discovering, do not need to make this call");
+        } else {
+            addServiceRequest();
+            // Make discover call and first discover task submission
+            discoverServices();
+            submitServiceDiscoveryTask();
+        }
+    }
+
+    private void stopDiscoveringServices() {
+        Log.i(TAG, "Stopping service discovery...");
+        if (mIsDiscoveringServices) {
+            // Cancel remaining discover tasks:
+            for(ServiceDiscoveryTask task : mServiceDiscoveryTasks) {
+                task.cancel();
+            }
+            // Clear discovery tasks:
+            mServiceDiscoveryTasks.clear();
+            // Set to NOT discovering:
+            mIsDiscoveringServices = false;
+            // Clear service request (if any exist):
+            clearServiceRequests();
+        }
+    }
+
     private void discoverServices() {
-        // Define service request:
-        if(mServiceRequest != null) {
-            // Remove current service request:
-            updateStatus("Removing leftover requests...");
-            mWifiManager.removeServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
+        // Set discovering services:
+        mIsDiscoveringServices = true;
+        // Discover services:
+        mWifiManager.discoverServices(mChannel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "Started discovering services...");
+            }
+
+            @Override
+            public void onFailure(int error) {
+                Log.i(TAG, "Failed to start discovering services");
+            }
+        });
+//        if(mServiceRequest != null) {
+//            // Remove current service request:
+//            updateStatus("Removing leftover requests...");
+//            mWifiManager.removeServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
+//                @Override
+//                public void onSuccess() {
+//                    mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
+//
+//                    // Add request:
+//                    mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
+//                        @Override
+//                        public void onSuccess() {
+//                            Log.i(TAG, "Successfully added service request");
+//                            updateStatus("Discovering services...");
+//
+//                        }
+//
+//                        @Override
+//                        public void onFailure(int error) {
+//                            Log.i(TAG, "Failed to add service discovery request: " + error);
+//                        }
+//                    });
+//                }
+//
+//                @Override
+//                public void onFailure(int i) {
+//
+//                }
+//            });
+//        } else {
+//            mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
+//
+//            // Add request:
+//            updateStatus("Adding service request...");
+//            mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
+//                @Override
+//                public void onSuccess() {
+//                    Log.i(TAG, "Successfully added service request");
+//                    updateStatus("Discovering services...");
+//                    mWifiManager.discoverServices(mChannel, new WifiP2pManager.ActionListener() {
+//                        @Override
+//                        public void onSuccess() {
+//                            Log.i(TAG, "Started discovering services...");
+//                        }
+//
+//                        @Override
+//                        public void onFailure(int error) {
+//                            Log.i(TAG, "Failed to start discovering services");
+//                        }
+//                    });
+//                }
+//
+//                @Override
+//                public void onFailure(int error) {
+//                    Log.i(TAG, "Failed to add service discovery request: " + error);
+//                }
+//            });
+//        }
+
+    }
+
+    /**
+     * Submits a new task to initiate service discovery after the discovery
+     * timeout period has expired
+     */
+    private void submitServiceDiscoveryTask(){
+        Log.i(TAG, "Submitting service discovery task");
+        // Discover times out after 2 minutes so we set the timer to that
+        int timeToWait = SERVICE_DISCOVERY_TIMEOUT;
+        ServiceDiscoveryTask serviceDiscoveryTask = new ServiceDiscoveryTask();
+        Timer timer = new Timer();
+        // Submit the service discovery task and add it to the list
+        timer.schedule(serviceDiscoveryTask, timeToWait);
+        mServiceDiscoveryTasks.add(serviceDiscoveryTask);
+    }
+
+    /**
+     * Timed task to initiate a new services discovery. Will recursively submit
+     * a new task as long as isDiscovering is true
+     */
+    private class ServiceDiscoveryTask extends TimerTask {
+        public void run() {
+            discoverServices();
+            // Submit the next task if a stop call hasn't been made
+            if (mIsDiscoveringServices) {
+                submitServiceDiscoveryTask();
+            }
+            // Remove this task from the list since it's complete
+            mServiceDiscoveryTasks.remove(this);
+        }
+    }
+
+    private void addServiceRequest() {
+        // Define new service request:
+        mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
+
+        // Tell the framework we want to scan for services. Prerequisite for discovering services
+        mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "Service discovery request added");
+            }
+
+            @Override
+            public void onFailure(int error) {
+                Log.i(TAG, "Failed to add service request: "+error);
+                mServiceRequest = null;
+            }
+        });
+    }
+
+    private void removeService() {
+        if(mServiceInfo != null) {
+            Log.i(TAG, "Removing local service...");
+            mWifiManager.removeLocalService(mChannel, mServiceInfo, new WifiP2pManager.ActionListener() {
                 @Override
                 public void onSuccess() {
-                    mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
-
-                    // Add request:
-                    mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
-                        @Override
-                        public void onSuccess() {
-                            Log.i(TAG, "Successfully added service request");
-                            updateStatus("Discovering services...");
-                            mWifiManager.discoverServices(mChannel, new WifiP2pManager.ActionListener() {
-                                @Override
-                                public void onSuccess() {
-                                    Log.i(TAG, "Started discovering services...");
-                                }
-
-                                @Override
-                                public void onFailure(int error) {
-                                    Log.i(TAG, "Failed to start discovering services");
-                                }
-                            });
-                        }
-
-                        @Override
-                        public void onFailure(int error) {
-                            Log.i(TAG, "Failed to add service discovery request: " + error);
-                        }
-                    });
+                    // Reset service info:
+                    mServiceInfo = null;
                 }
 
                 @Override
                 public void onFailure(int i) {
-
-                }
-            });
-        } else {
-            mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
-
-            // Add request:
-            updateStatus("Adding service request...");
-            mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
-                @Override
-                public void onSuccess() {
-                    Log.i(TAG, "Successfully added service request");
-                    updateStatus("Discovering services...");
-                    mWifiManager.discoverServices(mChannel, new WifiP2pManager.ActionListener() {
-                        @Override
-                        public void onSuccess() {
-                            Log.i(TAG, "Started discovering services...");
-                        }
-
-                        @Override
-                        public void onFailure(int error) {
-                            Log.i(TAG, "Failed to start discovering services");
-                        }
-                    });
-                }
-
-                @Override
-                public void onFailure(int error) {
-                    Log.i(TAG, "Failed to add service discovery request: " + error);
+                    Log.e(TAG, "Failed to remove local service...");
                 }
             });
         }
+    }
 
+    private void removePersistentGroups() {
+        try {
+            Method[] methods = WifiP2pManager.class.getMethods();
+            for (int i = 0; i < methods.length; i++) {
+                if (methods[i].getName().equals("deletePersistentGroup")) {
+                    // Remove any persistent group
+                    for (int netid = 0; netid < 32; netid++) {
+                        methods[i].invoke(mWifiManager, mChannel, netid, null);
+                    }
+                }
+            }
+            Log.i(TAG, "Persistent groups removed");
+        } catch(Exception e) {
+            Log.e(TAG, "Failure removing persistent groups: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private void connectToService(String instanceName, String type, WifiP2pDevice device) {
@@ -551,6 +683,35 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 Log.i(TAG, "Unable to connect to device: "+i);
                 // Notify user unable to connect to service:
                 Utils.showToast(MainActivity.this, "Unable to connect to service");
+            }
+        });
+    }
+
+    private void clearServiceRequests() {
+        Log.i(TAG, "Clearing service requests...");
+        mWifiManager.clearServiceRequests(mChannel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                mServiceRequest = null;
+            }
+
+            @Override
+            public void onFailure(int i) {
+                Log.i(TAG, "Failed to clear service request");
+            }
+        });
+    }
+
+    private void clearLocalServices() {
+        mWifiManager.clearLocalServices(mChannel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Log.i(TAG, "Able to ");
+            }
+
+            @Override
+            public void onFailure(int i) {
+
             }
         });
     }
