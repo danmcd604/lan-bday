@@ -13,14 +13,22 @@ import java.util.concurrent.TimeUnit;
  * Created by dan on 5/19/18.
  */
 
-public class ReceiverSocketHandler extends Thread {
+public class OwnerSocketHandler extends Thread {
 
-    ServerSocket socket = null;
-    private final int THREAD_COUNT = 10;
+    private static final String TAG = "OwnerSocketHandler";
+
+    // Connection //
+    private static final int THREAD_COUNT = 10;
+
+    private ServerSocket socket = null;
     private Handler handler;
-    private static final String TAG = "ReceiverSocketHandler";
+    private CommunicationManager manager;
 
-    public ReceiverSocketHandler(Handler handler) throws IOException {
+    private final ThreadPoolExecutor pool = new ThreadPoolExecutor(
+            THREAD_COUNT, THREAD_COUNT, 10, TimeUnit.SECONDS,
+            new LinkedBlockingQueue<Runnable>());
+
+    public OwnerSocketHandler(Handler handler) throws IOException {
         try {
             socket = new ServerSocket(MainActivity.SERVER_PORT);
             this.handler = handler;
@@ -33,20 +41,14 @@ public class ReceiverSocketHandler extends Thread {
 
     }
 
-    /**
-     * A ThreadPool for client sockets.
-     */
-    private final ThreadPoolExecutor pool = new ThreadPoolExecutor(
-            THREAD_COUNT, THREAD_COUNT, 10, TimeUnit.SECONDS,
-            new LinkedBlockingQueue<Runnable>());
-
     @Override
     public void run() {
         while (true) {
             try {
                 // A blocking operation. Initiate a ChatManager instance when
                 // there is a new connection
-                pool.execute(new CommunicationManager(socket.accept(), handler));
+                manager = new CommunicationManager(socket.accept(), handler);
+                pool.execute(manager);
                 Log.d(TAG, "Launching the I/O handler");
 
             } catch (IOException e) {
@@ -61,5 +63,9 @@ public class ReceiverSocketHandler extends Thread {
                 break;
             }
         }
+    }
+
+    public CommunicationManager getManager() {
+        return manager;
     }
 }

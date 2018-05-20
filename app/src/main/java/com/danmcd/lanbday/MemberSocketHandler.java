@@ -7,35 +7,37 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Created by dan on 5/19/18.
  */
 
-public class SenderSocketHandler extends Thread {
-    private static final String TAG = "SenderSocketHandler";
+public class MemberSocketHandler extends Thread {
+
+
+    private static final String TAG = "MemberSocketHandler";
+
+    // Connections //
     private Handler handler;
     private CommunicationManager manager;
-    private InetAddress mAddress;
+    private InetAddress address;
 
-    public SenderSocketHandler(Handler handler, InetAddress groupOwnerAddress) {
+    public MemberSocketHandler(Handler handler, InetAddress groupAddress) {
         this.handler = handler;
-        mAddress = groupOwnerAddress;
+        address = groupAddress;
 
     }
 
     @Override
     public void run() {
+        // Initialize socket:
         Socket socket = new Socket();
         try {
             socket.bind(null);
-            Log.d(TAG, ""+socket.getLocalPort());
-            socket.connect(new InetSocketAddress(mAddress.getHostAddress(),
+            socket.connect(new InetSocketAddress(address.getHostAddress(),
                     MainActivity.SERVER_PORT), 5000);
-            Log.d(TAG, "Launching the I/O handler");
+
+            // Define communication manager:
             manager = new CommunicationManager(socket, handler);
             new Thread(manager).start();
         } catch (IOException e) {

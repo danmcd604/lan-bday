@@ -43,7 +43,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private static final String TAG = "MainActivity";
 
     // Service //
-    private static final int SERVICE_DISCOVERY_TIMEOUT = 120000; // Every 2 minutes
+    private static final int SERVICE_DISCOVERY_TIMEOUT = 20000; // Every 20 seconds
     private static final String SERVICE_INSTANCE = "_landbay";
     private static final String SERVICE_TYPE = "_presence._tcp";
 
@@ -53,6 +53,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private WifiP2pServiceInfo mServiceInfo;
     private final ArrayList<ServiceDiscoveryTask> mServiceDiscoveryTasks = new ArrayList<>();
     private boolean mIsDiscoveringServices = false;
+    private boolean mConnectedToService = false;
 
     // Communication //
     private IntentFilter mIntentFilter = new IntentFilter();
@@ -87,13 +88,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
         // Setup intent filters for receiver:
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
-
         // Initialize wifi manager:
         mWifiManager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
         mChannel = mWifiManager.initialize(this, getMainLooper(), null);
@@ -160,6 +159,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         removePersistentGroups();
         // Remove local service:
         removeService();
+        // Disconnect from peer:
+        disconnectFromDevice();
     }
 
     @Override
@@ -172,7 +173,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 // Show status content:
                 showStatusContent(true);
                 // Register service for discovery:
-                registerDnsService();
+                addLocalService();
                 break;
             case R.id.btn_receiver:
                 // Set state to 'receiver':
@@ -273,100 +274,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     ////////////////// CONNECTIONS ////////////////////
     ///////////////////////////////////////////////////
 
-
-    @Override
-    public void onConnectionStateChanged(boolean connected) {
-        Log.i(TAG, "Connected: "+connected);
-//        if(connected && mCurrentState == UNDETERMINED) {
-//            /*
-//                User is connected to a peer but has not yet
-//                determined their state. We don't want this to
-//                occur. So here we'll disconnect from that peer.
-//             */
-//            removeGroupFromChannel();
-//        }
-    }
-
-    @Override
-    public void onConnectionInfoAvailable(WifiP2pInfo wifiP2pInfo) {
-        Log.i(TAG, "Received connection info...");
-//        if(mCurrentState == UNDETERMINED) {
-//            Log.i(TAG, "Received connection info in undetermined state!");
-//            //TODO: handle this case, probably improperly stopped app
-//            return;
-//        }
-
-        if(mCommunicationThread != null) {
-            Log.i(TAG, "Communication thread has already been set up");
-            return;
-        }
-        // Determine handler type:
-        if(wifiP2pInfo.isGroupOwner) {
-            Log.i(TAG, "Phone is owner of group!");
-            Log.d(TAG, "Connected as group owner");
-            try {
-                mCommunicationThread = new ReceiverSocketHandler(this.handler);
-                mCommunicationThread.start();
-            } catch (IOException e) {
-                Log.d(TAG,
-                        "Failed to create a server thread - " + e.getMessage());
-                return;
-            }
-            //TODO: will eventually need to launch receiver fragment
-
-        } else {
-            Log.i(TAG, "Phone is not owner of group");
-            Log.d(TAG, "Connected as peer");
-            Log.d(TAG, "Group owner address: "+wifiP2pInfo.groupOwnerAddress);
-            /*
-                Communication w/ a peer has been established. At this
-                point status content should be hidden and we should
-                transition to the SenderFragment.
-             */
-            // Define communication thread:
-            mCommunicationThread = new SenderSocketHandler(
-                    this.handler,
-                    wifiP2pInfo.groupOwnerAddress);
-
-            mCommunicationThread.start();
-            // Launch sender fragment:
-            launchSenderFragment();
-        }
-    }
-
-    @Override
-    public void onDnsSdServiceAvailable(String instanceName, String type, WifiP2pDevice device) {
-        Log.i(TAG, "Discovered Service!!!");
-        if(StringUtils.equals(instanceName, SERVICE_INSTANCE)) {
-            Log.i(TAG, "Service discovered was our service!!!");
-            Log.i(TAG, "Device Name: "+device.deviceName);
-            Log.i(TAG, ""+device.isGroupOwner());
-            // Connect to service:
-            connectToService(instanceName, type, device);
-        }
-    }
-
-    @Override
-    public void onDnsSdTxtRecordAvailable(String s, Map<String, String> map, WifiP2pDevice wifiP2pDevice) {
-    }
-
-    @Override
-    public boolean handleMessage(Message message) {
-        Log.i(TAG, "Message: "+message.what);
-        switch (message.what) {
-            case CommunicationManager.RECEIVED:
-                byte[] readBuf = (byte[]) message.obj;
-                // construct a string from the valid bytes in the buffer
-                String readMessage = new String(readBuf, 0, message.arg1);
-                Log.d(TAG, readMessage);
-                break;
-            case CommunicationManager.START:
-                manager = (CommunicationManager) message.obj;
-                break;
-        }
-        return false;
-    }
-
     public class WriteTask extends AsyncTask<Void, Void, Object> {
         CommunicationManager manager;
         String message;
@@ -388,11 +295,139 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
     }
 
+    /**
+     * Timed task to initiate a new services discovery. Will recursively submit
+     * a new task as long as isDiscovering is true
+     */
+    private class ServiceDiscoveryTask extends TimerTask {
+        public void run() {
+            discoverServices();
+            // Submit the next task if a stop call hasn't been made
+            if (mIsDiscoveringServices) {
+                submitServiceDiscoveryTask();
+            }
+            // Remove this task from the list since it's complete
+            mServiceDiscoveryTasks.remove(this);
+        }
+    }
+
+
+    @Override
+    public void onConnectionStateChanged(boolean connected) {
+        Log.i(TAG, "Connected: "+connected);
+    }
+
+    @Override
+    public void onConnectionInfoAvailable(WifiP2pInfo wifiP2pInfo) {
+        Log.i(TAG, "Received connection info...");
+
+        /*
+            Currently we'll restrict communication between 2 devices w/ a
+            single service.
+         */
+        if(mCommunicationThread != null) {
+            Log.i(TAG, "Communication thread has already been set up");
+            return;
+        }
+
+
+        // Determine handler type:
+        if(wifiP2pInfo.isGroupOwner) {
+            Log.i(TAG, "Phone is owner of group");
+            Log.d(TAG, "Connected as group owner");
+            try {
+                mCommunicationThread = new OwnerSocketHandler(this.handler);
+                mCommunicationThread.start();
+            } catch (IOException e) {
+                Log.d(TAG,
+                        "Failed to create owner handler - " + e.getMessage());
+                return;
+            }
+        } else {
+            Log.i(TAG, "Phone is not owner of group");
+            Log.d(TAG, "Connected as member");
+            Log.d(TAG, "Group owner address: "+wifiP2pInfo.groupOwnerAddress);
+            /*
+                Communication w/ a peer has been established. At this
+                point status content should be hidden and we should
+                transition to the SenderFragment.
+             */
+            // Define communication thread:
+            mCommunicationThread = new MemberSocketHandler(
+                    this.handler,
+                    wifiP2pInfo.groupOwnerAddress);
+
+            mCommunicationThread.start();
+        }
+
+        // Set connected to service:
+        setConnectedToService(true);
+
+        // Launch sender/receiver fragment:
+        if(mCurrentState == SENDER) {
+            launchSenderFragment();
+        }
+    }
+
+    @Override
+    public void onDnsSdServiceAvailable(String instanceName, String type, WifiP2pDevice device) {
+        Log.i(TAG, "Discovered Service!!!");
+        /*
+            Prevent the client from connecting to services until the
+            user has decided if they are going to be the sender or
+            receiver of data.
+         */
+        if(mCurrentState == UNDETERMINED) {
+            Log.w(TAG, "Found available service, but no state selected");
+            return;
+        }
+
+        /*
+            We would only like to connect to services that match our
+            communication service.
+         */
+        if(StringUtils.equals(instanceName, SERVICE_INSTANCE)) {
+            Log.i(TAG, "Service discovered was our service!!!");
+            Log.i(TAG, "Device Name: "+device.deviceName);
+            Log.i(TAG, "Device Address: "+device.deviceAddress);
+            Log.i(TAG, "Group Owner: "+device.isGroupOwner());
+            // Connect to service:
+            connectToService(instanceName, type, device);
+        }
+    }
+
+    @Override
+    public void onDnsSdTxtRecordAvailable(String instanceName, Map<String, String> record, WifiP2pDevice wifiP2pDevice) {
+        Log.i(TAG, "Received dns text record...");
+        Log.d(TAG, "Instance Name: "+instanceName);
+        for(String key : record.keySet()) {
+            Log.d(TAG, "Key: "+key);
+            Log.d(TAG, "Value: "+record.get(key));
+        }
+    }
+
+    @Override
+    public boolean handleMessage(Message message) {
+        Log.i(TAG, "Message: "+message.what);
+        switch (message.what) {
+            case CommunicationManager.RECEIVED:
+                byte[] readBuf = (byte[]) message.obj;
+                // construct a string from the valid bytes in the buffer
+                String readMessage = new String(readBuf, 0, message.arg1);
+                Log.d(TAG, readMessage);
+                break;
+            case CommunicationManager.START:
+                manager = (CommunicationManager) message.obj;
+                break;
+        }
+        return false;
+    }
+
 
     /**
      * Registers local service that other devices are capable of finding and connecting to.
      */
-    private void registerDnsService() {
+    private void addLocalService() {
         Log.i(TAG, "Registering DNS service for discovery...");
 
         // Clear any other local services in channel:
@@ -402,7 +437,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             public void onSuccess() {
                 // Initialize record:
                 Map<String, String> record = new HashMap<String, String>();
-                //TODO: add necessary arguments to record? might not need
 
                 // Define dns service:
                 mServiceInfo = WifiP2pDnsSdServiceInfo.newInstance(
@@ -496,65 +530,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 Log.i(TAG, "Failed to start discovering services");
             }
         });
-//        if(mServiceRequest != null) {
-//            // Remove current service request:
-//            updateStatus("Removing leftover requests...");
-//            mWifiManager.removeServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
-//                @Override
-//                public void onSuccess() {
-//                    mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
-//
-//                    // Add request:
-//                    mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
-//                        @Override
-//                        public void onSuccess() {
-//                            Log.i(TAG, "Successfully added service request");
-//                            updateStatus("Discovering services...");
-//
-//                        }
-//
-//                        @Override
-//                        public void onFailure(int error) {
-//                            Log.i(TAG, "Failed to add service discovery request: " + error);
-//                        }
-//                    });
-//                }
-//
-//                @Override
-//                public void onFailure(int i) {
-//
-//                }
-//            });
-//        } else {
-//            mServiceRequest = WifiP2pDnsSdServiceRequest.newInstance();
-//
-//            // Add request:
-//            updateStatus("Adding service request...");
-//            mWifiManager.addServiceRequest(mChannel, mServiceRequest, new WifiP2pManager.ActionListener() {
-//                @Override
-//                public void onSuccess() {
-//                    Log.i(TAG, "Successfully added service request");
-//                    updateStatus("Discovering services...");
-//                    mWifiManager.discoverServices(mChannel, new WifiP2pManager.ActionListener() {
-//                        @Override
-//                        public void onSuccess() {
-//                            Log.i(TAG, "Started discovering services...");
-//                        }
-//
-//                        @Override
-//                        public void onFailure(int error) {
-//                            Log.i(TAG, "Failed to start discovering services");
-//                        }
-//                    });
-//                }
-//
-//                @Override
-//                public void onFailure(int error) {
-//                    Log.i(TAG, "Failed to add service discovery request: " + error);
-//                }
-//            });
-//        }
-
     }
 
     /**
@@ -572,21 +547,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mServiceDiscoveryTasks.add(serviceDiscoveryTask);
     }
 
-    /**
-     * Timed task to initiate a new services discovery. Will recursively submit
-     * a new task as long as isDiscovering is true
-     */
-    private class ServiceDiscoveryTask extends TimerTask {
-        public void run() {
-            discoverServices();
-            // Submit the next task if a stop call hasn't been made
-            if (mIsDiscoveringServices) {
-                submitServiceDiscoveryTask();
-            }
-            // Remove this task from the list since it's complete
-            mServiceDiscoveryTasks.remove(this);
-        }
-    }
+
 
     private void addServiceRequest() {
         // Define new service request:
@@ -745,6 +706,23 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         });
     }
 
+    private void setConnectedToService(boolean connected) {
+        mConnectedToService = connected;
+    }
+
+    private boolean isConnectedToService() {
+        return mConnectedToService;
+    }
+
+    /**
+     * Gets the communication manager depending on the clients current state in the group
+     * i.e. if they are the group owner or not.
+     * @return
+     */
+    private CommunicationManager getCommunicationManager() {
+        return null;
+    }
+
     ///////////////////////////////////////////////////
     /////////////// SEND COMMUNICATION ////////////////
     ///////////////////////////////////////////////////
@@ -757,8 +735,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         Log.d(TAG, "Birth Day: "+SenderFragment.BIRTHDAY_FORMAT.format(birthDay));
 
         String message = TextUtils.join("|", new String[] {name, SenderFragment.BIRTHDAY_FORMAT.format(birthDay)});
-        new WriteTask(manager, message).execute(null, null);
+        CommunicationManager manager = null;
+        if(mCommunicationThread instanceof MemberSocketHandler) {
+            manager = this.manager;
+        } else if(mCommunicationThread instanceof OwnerSocketHandler){
+            manager = ((OwnerSocketHandler) mCommunicationThread).getManager();
+        }
 
+        new WriteTask(manager, message).execute(null, null);
         // Notify birthday was sent:
         Utils.showToast(this, "Sent Birthday");
     }
