@@ -20,10 +20,10 @@ public class WifiBroadcastReceiver extends BroadcastReceiver {
     // Communication //
     private WifiP2pManager mWifiManager;
     private Channel mChannel;
-    private ConnectionInfoListener mListener;
+    private ConnectionListener mListener;
 
     public WifiBroadcastReceiver(
-            WifiP2pManager manager, Channel channel, ConnectionInfoListener listener) {
+            WifiP2pManager manager, Channel channel, ConnectionListener listener) {
         mWifiManager = manager;
         mChannel = channel;
         mListener = listener;
@@ -55,14 +55,34 @@ public class WifiBroadcastReceiver extends BroadcastReceiver {
                         "Connected to p2p network. Requesting network details");
                 mWifiManager.requestConnectionInfo(mChannel,
                         mListener);
-            } else {
-                // It's a disconnect
+                // Notify connected:
+
             }
+            notifyConnected(networkInfo.isConnected());
             //TODO: handle connection changed action
         } else if(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION.equals(action)) {
             Log.i(TAG, "Received Device Changed Action");
             //TODO: handle device change action
+        } else if(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION.equals(action)) {
+            // Determine if Wifi P2P mode is enabled or not, alert
+            // the Activity.
+            int state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1);
+            if (state == WifiP2pManager.WIFI_P2P_STATE_ENABLED) {
+                Log.i(TAG, "P2P State Enabled");
+//                activity.setIsWifiP2pEnabled(true);
+            } else {
+                Log.i(TAG, "P2P State Disabled");
+//                activity.setIsWifiP2pEnabled(false);
+            }
         }
 
+    }
+
+    private void notifyConnected(boolean connected) {
+        if(mListener == null) {
+            return;
+        }
+
+        mListener.onConnectionStateChanged(connected);
     }
 }

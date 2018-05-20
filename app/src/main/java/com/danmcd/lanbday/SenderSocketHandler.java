@@ -40,6 +40,7 @@ public class SenderSocketHandler extends Thread {
             new Thread(manager).start();
         } catch (IOException e) {
             e.printStackTrace();
+            handler.obtainMessage(CommunicationManager.CONNECTION_REFUSED);
             try {
                 socket.close();
             } catch (IOException e1) {

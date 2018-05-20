@@ -16,6 +16,7 @@ public class CommunicationManager implements Runnable {
 
     public static final int START = 1;
     public static final int RECEIVED = 2;
+    public static final int CONNECTION_REFUSED = 3;
 
     private Socket socket = null;
     private Handler handler;
@@ -43,6 +44,7 @@ public class CommunicationManager implements Runnable {
             while (true) {
                 try {
                     // Read from the InputStream
+
                     bytes = iStream.read(buffer);
                     if (bytes == -1) {
                         break;
@@ -69,9 +71,14 @@ public class CommunicationManager implements Runnable {
 
     public void write(byte[] buffer) {
         try {
+            oStream.flush();
             oStream.write(buffer);
         } catch (IOException e) {
             Log.e(TAG, "Exception during write", e);
         }
+    }
+
+    public Socket getSocket() {
+        return socket;
     }
 }
