@@ -720,7 +720,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
      * @return
      */
     private CommunicationManager getCommunicationManager() {
-        return null;
+        CommunicationManager manager = null;
+        if(mCommunicationThread instanceof MemberSocketHandler) {
+            manager = this.manager;
+        } else if(mCommunicationThread instanceof OwnerSocketHandler){
+            manager = ((OwnerSocketHandler) mCommunicationThread).getManager();
+        }
+
+        return manager;
     }
 
     ///////////////////////////////////////////////////
@@ -730,19 +737,21 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     @Override
     public void sendBirthday(String name, Date birthDay) {
-        //TODO: implement sending birthday
+        Log.i(TAG, "Attempting to send birthday...");
         Log.d(TAG, "Name: "+name);
         Log.d(TAG, "Birth Day: "+SenderFragment.BIRTHDAY_FORMAT.format(birthDay));
 
+        // Build formatted message:
         String message = TextUtils.join("|", new String[] {name, SenderFragment.BIRTHDAY_FORMAT.format(birthDay)});
-        CommunicationManager manager = null;
-        if(mCommunicationThread instanceof MemberSocketHandler) {
-            manager = this.manager;
-        } else if(mCommunicationThread instanceof OwnerSocketHandler){
-            manager = ((OwnerSocketHandler) mCommunicationThread).getManager();
-        }
+        //TODO: minimize message size
 
+        // Get communication manager:
+        CommunicationManager manager = getCommunicationManager();
+
+        // Execute write task:
         new WriteTask(manager, message).execute(null, null);
+        //TODO: this task shoudl be managed in the lifecycle of the activity
+
         // Notify birthday was sent:
         Utils.showToast(this, "Sent Birthday");
     }
