@@ -1,6 +1,7 @@
 package com.danmcd.lanbday;
 
 import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 
 import java.io.Closeable;
@@ -36,6 +37,9 @@ public class OwnerSocketHandler extends Thread implements Closeable {
             Log.d(TAG, "Socket Started");
         } catch (IOException e) {
             e.printStackTrace();
+            Message message = new Message();
+            message.what = CommunicationManager.CONNECTION_ERROR;
+            handler.dispatchMessage(message);
             pool.shutdownNow();
             throw e;
         }

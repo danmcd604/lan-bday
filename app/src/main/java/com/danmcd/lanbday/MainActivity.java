@@ -21,7 +21,6 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
-import android.widget.LinearLayout;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
 
@@ -371,6 +370,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             disconnectFromService();
             // Set state:
             setState(UNDETERMINED);
+            // Remove current fragment:
+            Fragment activeFragment = getActiveFragment();
+            if(activeFragment != null) {
+                getFragmentManager().beginTransaction().remove(activeFragment);
+            }
             // Show chooser content:
             showContentChooserArea(true);
             // Notify user disconnected:
@@ -502,21 +506,31 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             case CommunicationManager.START:
                 manager = (CommunicationManager) message.obj;
                 break;
-            case CommunicationManager.CONNECTION_REFUSED:
+            case CommunicationManager.CONNECTION_ERROR:
                 Log.e(TAG, "Connection has been refused");
                 /*
                     Connection to peer has been refused. At this point
                     the client should disconnect from the peer, and UI
                     should be updated.
                  */
-                // Disconnect from peer:
-                disconnectFromDevice();
-                // Remove group:
-                removeGroupFromChannel();
-                // Remove persistent groups:
-                removePersistentGroups();
+                // Disconect from service:
+                disconnectFromService();
                 // Reset connection state:
                 resetConnectionState();
+                // Show choose content:
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        // Remove current fragment:
+                        Fragment activeFragment = getActiveFragment();
+                        if(activeFragment != null) {
+                            getFragmentManager().beginTransaction().remove(activeFragment);
+                        }
+                        // Show connection state:
+                        showContentChooserArea(true);
+                    }
+                });
+
                 break;
         }
         return false;
@@ -723,12 +737,21 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private void disconnectFromService() {
         // Remove group:
+        removeService();
         removeGroupFromChannel();
         removePersistentGroups();
         // Clear local services:
         clearLocalServices();
         // Disconnect from device:
         disconnectFromDevice();
+        // Stop handlers:
+        if(mCommunicationThread instanceof Closeable) {
+            try {
+                ((Closeable) mCommunicationThread).close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
         // Reset connection state:
         resetConnectionState();
     }

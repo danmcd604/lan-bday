@@ -1,6 +1,7 @@
 package com.danmcd.lanbday;
 
 import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 
 import java.io.IOException;
@@ -16,7 +17,7 @@ public class CommunicationManager implements Runnable {
 
     public static final int START = 1;
     public static final int RECEIVED = 2;
-    public static final int CONNECTION_REFUSED = 3;
+    public static final int CONNECTION_ERROR = 3;
 
     private Socket socket = null;
     private Handler handler;
@@ -60,6 +61,9 @@ public class CommunicationManager implements Runnable {
             }
         } catch (IOException e) {
             e.printStackTrace();
+            Message message = new Message();
+            message.what = CommunicationManager.CONNECTION_ERROR;
+            handler.dispatchMessage(message);
         } finally {
             try {
                 socket.close();

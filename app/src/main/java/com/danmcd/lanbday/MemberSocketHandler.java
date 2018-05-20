@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.net.ConnectException;
 
 /**
  * Created by dan on 5/19/18.
@@ -48,13 +47,19 @@ public class MemberSocketHandler extends Thread implements Closeable {
             e.printStackTrace();
             Log.w(TAG, "Connection was refused!");
             Message message = new Message();
-            message.what = CommunicationManager.CONNECTION_REFUSED;
+            message.what = CommunicationManager.CONNECTION_ERROR;
             handler.dispatchMessage(message);
             try {
                 socket.close();
             } catch (IOException e1) {
                 e1.printStackTrace();
             }
+        } catch (NullPointerException e){
+            Log.w(TAG, "Connection was refused!");
+            Message message = new Message();
+            message.what = CommunicationManager.CONNECTION_ERROR;
+            handler.dispatchMessage(message);
+            e.printStackTrace();
         }
     }
 
