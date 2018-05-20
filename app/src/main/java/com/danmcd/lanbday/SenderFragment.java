@@ -34,7 +34,7 @@ public class SenderFragment extends BaseFragment implements View.OnClickListener
     private SenderInteractions mListener;
 
     // Birthday //
-    public static final String DATE_REGEX = "\\d{2}/\\d{2}/\\d{4}";
+    public static final String DATE_REGEX = "\\d{2}/\\d{2}/\\d{4}"; //TODO: improve regex for int restrictions
     public static final DateFormat BIRTHDAY_FORMAT = new SimpleDateFormat("MM/dd/yyyy", Locale.getDefault());
 
     // Views //

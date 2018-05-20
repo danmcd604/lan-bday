@@ -28,6 +28,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -250,7 +251,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private void launchReceiverFragment() {
-        //TODO: implement launch receiver
+        // Launch receiver fragment:
+        launchFragment(ReceiverFragment.newInstance(), ReceiverFragment.TAG);
+        // Transition to fragment content:
+        showContentChooserArea(false);
     }
 
     /**
@@ -268,6 +272,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 .replace(R.id.content_frame, fragment, tag)
                 .addToBackStack(tag)
                 .commit();
+    }
+
+    private Fragment getActiveFragment() {
+        return getFragmentManager().findFragmentById(R.id.content_frame);
     }
 
     ///////////////////////////////////////////////////
@@ -366,6 +374,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // Launch sender/receiver fragment:
         if(mCurrentState == SENDER) {
             launchSenderFragment();
+        } else if(mCurrentState == RECEIVER) {
+            launchReceiverFragment();
         }
     }
 
@@ -414,7 +424,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 byte[] readBuf = (byte[]) message.obj;
                 // construct a string from the valid bytes in the buffer
                 String readMessage = new String(readBuf, 0, message.arg1);
-                Log.d(TAG, readMessage);
+                // Handle message received:
+                onBirthDayReceived(readMessage);
                 break;
             case CommunicationManager.START:
                 manager = (CommunicationManager) message.obj;
@@ -733,6 +744,40 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     ///////////////////////////////////////////////////
     /////////////// SEND COMMUNICATION ////////////////
     ///////////////////////////////////////////////////
+
+    /**
+     * Handles birthday information being received by the client. Birthday
+     * information is formatted as "<name>|<birth_date>".
+     * @param rawData
+     */
+    public void onBirthDayReceived(String rawData) {
+        Log.i(TAG, "Received birthday information");
+        if(TextUtils.isEmpty(rawData)) {
+            Log.w(TAG, "Received empty data");
+            return;
+        }
+        // Check to see if data matches expected format:
+        if(!rawData.matches("\\.*|\\.*")){
+            Log.w(TAG, "Data doesn't match expected format");
+        }
+
+        // Parse raw data:
+        String[] splitData = rawData.split("\\|");
+
+        String name = null;
+        Date birthDate = null;
+        try {
+            name = splitData[0];
+            birthDate = SenderFragment.BIRTHDAY_FORMAT.parse(splitData[1]);
+        } catch (NullPointerException e) {
+            e.printStackTrace();
+        } catch (ParseException e) {
+            e.printStackTrace();
+        }
+
+        // Notify 'receiver' that data was obtained:
+        ((ReceiverFragment) getActiveFragment()).setBirthdayInfo(name, birthDate);
+    }
 
 
     @Override
