@@ -16,7 +16,6 @@ import java.net.Socket;
 
 public class MemberSocketHandler extends Thread implements Closeable {
 
-
     private static final String TAG = "MemberSocketHandler";
 
     // Connections //
@@ -45,31 +44,35 @@ public class MemberSocketHandler extends Thread implements Closeable {
             new Thread(manager).start();
         } catch (IOException e) {
             e.printStackTrace();
-            Log.w(TAG, "Connection was refused!");
-            Message message = new Message();
-            message.what = CommunicationManager.CONNECTION_ERROR;
-            handler.dispatchMessage(message);
+            // Send connection error:
+            sendConnectionError();
             try {
                 socket.close();
             } catch (IOException e1) {
                 e1.printStackTrace();
             }
         } catch (NullPointerException e){
-            Log.w(TAG, "Connection was refused!");
-            Message message = new Message();
-            message.what = CommunicationManager.CONNECTION_ERROR;
-            handler.dispatchMessage(message);
             e.printStackTrace();
+            sendConnectionError();
         }
-    }
-
-    public CommunicationManager getManager() {
-        return manager;
     }
 
     @Override
     public void close() throws IOException {
         socket.close();
         socket = null;
+    }
+
+    public CommunicationManager getManager() {
+        return manager;
+    }
+
+    private void sendConnectionError() {
+        // Define message:
+        Message message = new Message();
+        message.what = CommunicationManager.CONNECTION_ERROR;
+
+        // Send message to handler:
+        handler.dispatchMessage(message);
     }
 }

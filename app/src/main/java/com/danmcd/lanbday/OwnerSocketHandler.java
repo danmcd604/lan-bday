@@ -32,14 +32,16 @@ public class OwnerSocketHandler extends Thread implements Closeable {
 
     public OwnerSocketHandler(Handler handler) throws IOException {
         try {
+            // Define server socket w/ port:
             socket = new ServerSocket(MainActivity.SERVER_PORT);
+            // Set handler:
             this.handler = handler;
             Log.d(TAG, "Socket Started");
         } catch (IOException e) {
             e.printStackTrace();
-            Message message = new Message();
-            message.what = CommunicationManager.CONNECTION_ERROR;
-            handler.dispatchMessage(message);
+            // Send connection error:
+            sendConnectionError();
+            // Shutdown background executor:
             pool.shutdownNow();
             throw e;
         }
@@ -50,18 +52,17 @@ public class OwnerSocketHandler extends Thread implements Closeable {
     public void run() {
         while (true) {
             try {
-                // A blocking operation. Initiate a ChatManager instance when
-                // there is a new connection
+                // Initialize communication manager:
                 manager = new CommunicationManager(socket.accept(), handler);
                 pool.execute(manager);
                 Log.d(TAG, "Launching the I/O handler");
-
             } catch (IOException e) {
                 try {
-                    if (socket != null && !socket.isClosed())
+                    if (socket != null && !socket.isClosed()) {
                         socket.close();
+                    }
                 } catch (IOException ioe) {
-
+                    e.printStackTrace();
                 }
                 e.printStackTrace();
                 pool.shutdownNow();
@@ -70,13 +71,22 @@ public class OwnerSocketHandler extends Thread implements Closeable {
         }
     }
 
-    public CommunicationManager getManager() {
-        return manager;
-    }
-
     @Override
     public void close() throws IOException {
         socket.close();
         socket = null;
+    }
+
+    public CommunicationManager getManager() {
+        return manager;
+    }
+
+    private void sendConnectionError() {
+        // Define message:
+        Message message = new Message();
+        message.what = CommunicationManager.CONNECTION_ERROR;
+
+        // Send message to handler:
+        handler.dispatchMessage(message);
     }
 }

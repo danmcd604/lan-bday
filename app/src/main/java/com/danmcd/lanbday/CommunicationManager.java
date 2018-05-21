@@ -14,22 +14,25 @@ import java.net.Socket;
  */
 
 public class CommunicationManager implements Runnable {
+    private static final String TAG = "CommunicationManager";
 
-    public static final int START = 1;
-    public static final int RECEIVED = 2;
-    public static final int CONNECTION_ERROR = 3;
+    // Messages //
+    public static final int START = 1; // States communcation has started.
+    public static final int RECEIVED = 2; // State message was received.
+    public static final int CONNECTION_ERROR = 3; // States connection error occured.
 
+    // General //
     private Socket socket = null;
     private Handler handler;
+
+    // Communication //
+    private InputStream iStream;
+    private OutputStream oStream;
 
     public CommunicationManager(Socket socket, Handler handler) {
         this.socket = socket;
         this.handler = handler;
     }
-
-    private InputStream iStream;
-    private OutputStream oStream;
-    private static final String TAG = "CommunicationManager";
 
     @Override
     public void run() {
@@ -51,8 +54,7 @@ public class CommunicationManager implements Runnable {
                         break;
                     }
 
-                    // Send the obtained bytes to the UI Activity
-//                    Log.d(TAG, "Rec:" + String.valueOf(buffer));
+                    // Send bytes to handler:
                     handler.obtainMessage(RECEIVED,
                             bytes, -1, buffer).sendToTarget();
                 } catch (IOException e) {
@@ -61,9 +63,8 @@ public class CommunicationManager implements Runnable {
             }
         } catch (IOException e) {
             e.printStackTrace();
-            Message message = new Message();
-            message.what = CommunicationManager.CONNECTION_ERROR;
-            handler.dispatchMessage(message);
+            // Send connection error:
+            sendConnectionError();
         } finally {
             try {
                 socket.close();
@@ -84,5 +85,14 @@ public class CommunicationManager implements Runnable {
 
     public Socket getSocket() {
         return socket;
+    }
+
+    private void sendConnectionError() {
+        // Define message:
+        Message message = new Message();
+        message.what = CommunicationManager.CONNECTION_ERROR;
+
+        // Send message to handler:
+        handler.dispatchMessage(message);
     }
 }
