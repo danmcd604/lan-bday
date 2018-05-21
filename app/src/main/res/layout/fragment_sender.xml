@@ -12,8 +12,8 @@
         android:orientation="vertical"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingLeft="100dp"
-        android:paddingRight="100dp"
+        android:paddingLeft="10dp"
+        android:paddingRight="10dp"
         android:layout_marginBottom="100dp">
         <EditText
             android:id="@+id/input_name"
